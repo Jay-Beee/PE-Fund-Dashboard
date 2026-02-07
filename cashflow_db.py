@@ -7,12 +7,21 @@ Vorzeichen-Konvention:
     - Inflows (positiv in Charts): distribution, clawback
 """
 
-from database import check_column_exists
-
-
 # ============================================================================
 # SCHEMA — Tabellen und Spalten erstellen
 # ============================================================================
+
+def _column_exists(conn, table_name, column_name):
+    """Prüft ob eine Spalte in einer Tabelle existiert (lokal, kein Import aus database)"""
+    with conn.cursor() as cursor:
+        cursor.execute("""
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = %s AND column_name = %s
+        )
+        """, (table_name, column_name))
+        return cursor.fetchone()[0]
+
 
 def ensure_cashflow_fund_columns(conn):
     """Fügt Cashflow-relevante Spalten zur funds-Tabelle hinzu"""
@@ -24,7 +33,7 @@ def ensure_cashflow_fund_columns(conn):
     ]
     with conn.cursor() as cursor:
         for col_name, col_type in columns:
-            if not check_column_exists(conn, 'funds', col_name):
+            if not _column_exists(conn, 'funds', col_name):
                 cursor.execute(f"ALTER TABLE funds ADD COLUMN {col_name} {col_type}")
                 conn.commit()
 
