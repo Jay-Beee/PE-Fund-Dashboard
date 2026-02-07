@@ -3,6 +3,10 @@ import psycopg2
 from psycopg2 import pool
 from contextlib import contextmanager
 from datetime import datetime, date
+from cashflow_db import (
+    ensure_cashflows_table, ensure_scenarios_table,
+    ensure_exchange_rates_table, ensure_cashflow_fund_columns
+)
 
 # === DATABASE CONFIGURATION ===
 DATABASE_CONFIG = {
@@ -386,6 +390,11 @@ def initialize_database(conn):
     ensure_placement_agent_contact_fields(conn)
     ensure_portfolio_company_fields(conn)
     ensure_net_metrics_fields(conn)
+
+    ensure_cashflow_fund_columns(conn)
+    ensure_scenarios_table(conn)
+    ensure_cashflows_table(conn)
+    ensure_exchange_rates_table(conn)
 
     migrate_to_gp_table(conn)
     migrate_existing_data_if_needed(conn)
