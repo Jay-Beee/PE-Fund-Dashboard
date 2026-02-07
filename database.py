@@ -19,7 +19,7 @@ DATABASE_CONFIG = {
 
 CONNECTION_POOL = pool.SimpleConnectionPool(
     minconn=1,
-    maxconn=5,
+    maxconn=10,
     **DATABASE_CONFIG
 )
 
