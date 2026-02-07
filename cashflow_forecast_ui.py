@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import date
 
-from database import get_connection, clear_cache
+from database import clear_cache
 from cashflow_db import (
     bulk_insert_cashflows, delete_forecast_cashflows, insert_scenario
 )
@@ -119,8 +119,7 @@ def render_forecast_section(conn, conn_id, fund_id, fund_name, currency, commit_
             new_sc = st.text_input("Neues Szenario", key="fc_new_scenario")
             if st.button("Erstellen", key="fc_create_scenario"):
                 if new_sc and new_sc.strip():
-                    with get_connection() as c:
-                        insert_scenario(c, new_sc.strip())
+                    insert_scenario(conn, new_sc.strip())
                     clear_cache()
                     st.success(f"Szenario '{new_sc}' erstellt.")
                     st.rerun()
