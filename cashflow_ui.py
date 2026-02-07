@@ -7,7 +7,9 @@ Rendert den kompletten Cashflow-Planning-Tab mit:
   C) Manueller Cashflow-Eintrag
   D) Cashflow-Tabelle mit Lösch-Buttons
   E) Charts (J-Curve, Balken, Timeline)
-  F) Excel-Import
+  F) Cashflow Forecast
+  G) Szenario-Vergleich
+  H) Excel-Import
 """
 
 import streamlit as st
@@ -30,6 +32,8 @@ from cashflow_charts import (
     create_j_curve_chart, create_cashflow_bar_chart,
     create_net_cashflow_timeline
 )
+from cashflow_forecast_ui import render_forecast_section
+from cashflow_scenario_comparison import render_scenario_comparison
 
 # Typ-Mapping: intern → deutsch
 TYPE_LABELS = {
@@ -295,7 +299,21 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
     st.markdown("---")
 
     # ================================================================
-    # F) Excel-Import
+    # F) Cashflow Forecast
+    # ================================================================
+    render_forecast_section(conn, conn_id, fund_id, selected_fund_name, currency, commit_info)
+
+    st.markdown("---")
+
+    # ================================================================
+    # G) Szenario-Vergleich
+    # ================================================================
+    render_scenario_comparison(conn_id, fund_id, selected_fund_name, currency, commit_info)
+
+    st.markdown("---")
+
+    # ================================================================
+    # H) Excel-Import
     # ================================================================
     with st.expander("📥 Excel-Import"):
         st.markdown("""
