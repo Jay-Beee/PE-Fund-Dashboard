@@ -327,3 +327,23 @@ def get_exchange_rate(conn, from_currency, to_currency, rate_date):
         """, (from_currency, to_currency, rate_date))
         result = cursor.fetchone()
         return result[0] if result else None
+
+
+def get_exchange_rate_with_inverse(conn, from_currency, to_currency, rate_date):
+    """Wie get_exchange_rate, aber mit Inverse-Fallback.
+
+    1. Sucht from→to Rate
+    2. Falls nicht gefunden: sucht to→from Rate und gibt 1/rate zurück
+    3. Falls beides nichts: gibt None zurück
+    """
+    if from_currency == to_currency:
+        return 1.0
+    # Direkte Rate versuchen
+    rate = get_exchange_rate(conn, from_currency, to_currency, rate_date)
+    if rate is not None:
+        return rate
+    # Inverse Rate versuchen
+    inverse_rate = get_exchange_rate(conn, to_currency, from_currency, rate_date)
+    if inverse_rate is not None and inverse_rate != 0:
+        return 1.0 / inverse_rate
+    return None
