@@ -1,10 +1,11 @@
 """
 Cashflow Planning Tool — Chart-Funktionen
 
-Drei Charts:
+Vier Charts:
   1. J-Curve (kumulierter Netto-Cashflow)
   2. Cashflow-Balkendiagramm (Kapitalabrufe vs. Ausschüttungen pro Periode)
   3. Net Cashflow Timeline (Flächendiagramm kumulativ)
+  4. Forecast Preview (Mini-Balkendiagramm für Vorschau)
 """
 
 import matplotlib.pyplot as plt
@@ -160,6 +161,66 @@ def create_net_cashflow_timeline(cumulative_df, fund_name,
     plt.xticks(rotation=45)
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best')
+    plt.tight_layout()
+
+    return fig
+
+
+def create_forecast_preview_chart(forecast, currency='EUR'):
+    """Mini-Balkendiagramm für Forecast-Vorschau (aggregiert nach Jahr).
+
+    Args:
+        forecast: list[dict] mit {date, type, amount}
+        currency: Währung für Achsenbeschriftung
+
+    Returns:
+        matplotlib Figure oder None
+    """
+    if not forecast:
+        return None
+
+    # Aggregiere nach Jahr
+    calls_by_year = {}
+    dists_by_year = {}
+    outflow_types = {'capital_call', 'management_fee', 'carried_interest'}
+
+    for entry in forecast:
+        year = entry['date'].year if hasattr(entry['date'], 'year') else entry['date']
+        amt = entry['amount']
+        if entry['type'] in outflow_types:
+            calls_by_year[year] = calls_by_year.get(year, 0) + amt
+        else:
+            dists_by_year[year] = dists_by_year.get(year, 0) + amt
+
+    all_years = sorted(set(list(calls_by_year.keys()) + list(dists_by_year.keys())))
+    if not all_years:
+        return None
+
+    calls = [calls_by_year.get(y, 0) for y in all_years]
+    dists = [dists_by_year.get(y, 0) for y in all_years]
+    labels = [str(y) for y in all_years]
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    x = np.arange(len(all_years))
+    width = 0.35
+
+    ax.bar(x - width / 2, [-c for c in calls], width, label='Kapitalabrufe',
+           color='#ef5350', alpha=0.85)
+    ax.bar(x + width / 2, dists, width, label='Ausschüttungen',
+           color='#66bb6a', alpha=0.85)
+
+    # Netto-Linie
+    net = [d - c for c, d in zip(calls, dists)]
+    ax.plot(x, net, color='black', linewidth=1.5, marker='o', markersize=4,
+            label='Netto', zorder=3)
+
+    ax.axhline(y=0, color='gray', linestyle='-', linewidth=0.5)
+    ax.set_title('Forecast-Vorschau', fontsize=12, fontweight='bold')
+    ax.set_ylabel(f'Betrag ({currency})')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend(loc='best', fontsize=9)
     plt.tight_layout()
 
     return fig
