@@ -35,6 +35,10 @@ from cashflow_charts import (
 )
 from cashflow_forecast_ui import render_forecast_section
 from cashflow_scenario_comparison import render_scenario_comparison
+from cashflow_dashboard import render_dashboard_widgets
+from cashflow_alerts import render_alerts_banner
+from cashflow_actual_vs_forecast import render_actual_vs_forecast_section
+from cashflow_portfolio_ui import render_portfolio_section
 
 # Typ-Mapping: intern → deutsch
 TYPE_LABELS = {
@@ -51,6 +55,18 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
     """Rendert den kompletten Cashflow-Planning-Tab."""
 
     st.header("💰 Cashflow Planning")
+
+    # ================================================================
+    # Dashboard-Widgets (Portfolio-KPIs)
+    # ================================================================
+    render_dashboard_widgets(conn_id)
+
+    # ================================================================
+    # Alerts-Banner
+    # ================================================================
+    render_alerts_banner(conn_id)
+
+    st.markdown("---")
 
     # ================================================================
     # A) Fonds-Auswahl + Commitment-Info
@@ -337,6 +353,13 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
     st.markdown("---")
 
     # ================================================================
+    # G.5) Ist vs. Forecast (pro Fonds)
+    # ================================================================
+    render_actual_vs_forecast_section(conn_id, fund_id, selected_fund_name, currency, selected_scenario)
+
+    st.markdown("---")
+
+    # ================================================================
     # H) Excel-Import
     # ================================================================
     with st.expander("📥 Excel-Import"):
@@ -436,3 +459,10 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
 
             except Exception as e:
                 st.error(f"Fehler beim Lesen der Datei: {e}")
+
+    st.markdown("---")
+
+    # ================================================================
+    # I) Portfolio-Aggregation
+    # ================================================================
+    render_portfolio_section(conn, conn_id)
