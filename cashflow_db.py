@@ -149,6 +149,18 @@ def delete_cashflow(conn, cashflow_id):
         conn.commit()
 
 
+def delete_forecast_cashflows(conn, fund_id, scenario_name):
+    """Löscht alle Forecast-Cashflows (is_actual=False) für Fund/Szenario"""
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM cashflows WHERE fund_id = %s AND scenario_name = %s AND is_actual = FALSE",
+            (fund_id, scenario_name)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        return deleted
+
+
 def get_cashflows_for_fund(conn, fund_id, scenario_name=None):
     """Holt alle Cashflows für einen Fonds, sortiert nach Datum"""
     with conn.cursor() as cursor:
