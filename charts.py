@@ -57,7 +57,7 @@ def wrap_label(text, max_chars=12, max_lines=2, base_fontsize=11):
     fontsize = base_fontsize * shrink_factor
     return "\n".join(lines), fontsize
 
-def get_mekko_chart_cached(fund_id, fund_name, reporting_date=None):
+def get_mekko_chart_cached(fund_id, fund_name, reporting_date=None, vintage_year=None):
     """
     Erstellt oder lädt Mekko Chart aus Session State.
     Charts werden nur 1x pro Session erstellt und dann wiederverwendet.
@@ -70,13 +70,13 @@ def get_mekko_chart_cached(fund_id, fund_name, reporting_date=None):
     if cache_key in st.session_state.mekko_charts:
         return st.session_state.mekko_charts[cache_key]
 
-    fig = _create_mekko_chart_internal(fund_id, fund_name, reporting_date)
+    fig = _create_mekko_chart_internal(fund_id, fund_name, reporting_date, vintage_year)
     st.session_state.mekko_charts[cache_key] = fig
 
     return fig
 
 
-def _create_mekko_chart_internal(fund_id, fund_name, reporting_date=None):
+def _create_mekko_chart_internal(fund_id, fund_name, reporting_date=None, vintage_year=None):
     """Interne Funktion: Erstellt das Mekko Chart."""
     with get_connection() as conn:
         if reporting_date:
@@ -118,6 +118,14 @@ def _create_mekko_chart_internal(fund_id, fund_name, reporting_date=None):
             gross_tvpi = None
             net_tvpi = None
             net_irr = None
+
+        if vintage_year is None:
+            vy_df = pd.read_sql_query(
+                "SELECT vintage_year FROM funds WHERE fund_id = %s",
+                conn, params=(fund_id,)
+            )
+            if not vy_df.empty and vy_df['vintage_year'].iloc[0] is not None:
+                vintage_year = int(vy_df['vintage_year'].iloc[0])
 
     if df.empty:
         return None
@@ -246,6 +254,13 @@ def _create_mekko_chart_internal(fund_id, fund_name, reporting_date=None):
         ha="center", va="bottom", fontsize=9, color="gray",
         transform=ax.transAxes, linespacing=1.4
     )
+
+    if vintage_year is not None:
+        ax.text(
+            0.5, 0.89, f"Vintage: {vintage_year}",
+            ha="center", va="bottom", fontsize=12, color="black",
+            fontweight="bold", transform=ax.transAxes
+        )
 
     ax.set_xticks([])
     ax.spines["top"].set_visible(False)
