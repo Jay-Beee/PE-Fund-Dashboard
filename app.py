@@ -28,6 +28,7 @@ from queries import (
 )
 from charts import get_mekko_chart_cached, clear_mekko_cache
 from admin import render_admin_tab
+from cashflow_ui import render_cashflow_tab
 
 # === SESSION STATE INITIALISIERUNG ===
 if 'filter_version' not in st.session_state:
@@ -206,9 +207,17 @@ def show_main_app():
 
             # Tabs basierend auf Rolle erstellen
             if is_admin():
-                tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Charts", "📈 Vergleichstabelle Fonds", "🏢 Portfoliounternehmen", "📋 Fonds", "👔 GPs", "🤝 Placement Agents", "⚙️ Admin"])
+                tab1, tab2, tab3, tab4, tab5, tab6, tab_cf, tab7 = st.tabs([
+                    "📊 Charts", "📈 Vergleichstabelle Fonds", "🏢 Portfoliounternehmen",
+                    "📋 Fonds", "👔 GPs", "🤝 Placement Agents",
+                    "💰 Cashflow Planning", "⚙️ Admin"
+                ])
             else:
-                tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Charts", "📈 Vergleichstabelle Fonds", "🏢 Portfoliounternehmen", "📋 Fonds", "👔 GPs", "🤝 Placement Agents"])
+                tab1, tab2, tab3, tab4, tab5, tab6, tab_cf = st.tabs([
+                    "📊 Charts", "📈 Vergleichstabelle Fonds", "🏢 Portfoliounternehmen",
+                    "📋 Fonds", "👔 GPs", "🤝 Placement Agents",
+                    "💰 Cashflow Planning"
+                ])
                 tab7 = None
 
             # TAB 1: CHARTS
@@ -672,6 +681,10 @@ def show_main_app():
                                 st.markdown("**Zugeordnete Fonds:**")
                                 for fund in selected_pa[11].split(', '):
                                     st.markdown(f"- {fund}")
+
+            # TAB CASHFLOW PLANNING
+            with tab_cf:
+                render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names)
 
             # TAB 7: ADMIN (nur für Admins sichtbar)
             if is_admin() and tab7 is not None:
