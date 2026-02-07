@@ -136,6 +136,51 @@ def get_cashflow_summary_cached(_conn_id, fund_id, scenario_name='base'):
 
 
 @st.cache_data(ttl=300)
+def get_historical_pacing_cached(_conn_id, fund_id, scenario_name='base'):
+    """Berechnet normalisierte Pacing-Kurven aus Ist-Daten.
+
+    Returns:
+        dict mit 'call_pacing': {year_offset: pct}, 'dist_pacing': {year_offset: pct},
+                 'commitment': float, 'first_year': int
+    """
+    df = get_cashflows_for_fund_cached(_conn_id, fund_id, scenario_name)
+    if df.empty:
+        return {'call_pacing': {}, 'dist_pacing': {}, 'commitment': 0, 'first_year': None}
+
+    # Nur Ist-Daten
+    actual_df = df[df['is_actual'] == True].copy()
+    if actual_df.empty:
+        return {'call_pacing': {}, 'dist_pacing': {}, 'commitment': 0, 'first_year': None}
+
+    # Commitment aus Fund-Info holen
+    commit_info = get_fund_commitment_info_cached(_conn_id, fund_id)
+    commitment = commit_info.get('commitment_amount') or 0
+    if commitment <= 0:
+        return {'call_pacing': {}, 'dist_pacing': {}, 'commitment': 0, 'first_year': None}
+
+    first_year = actual_df['date'].dt.year.min()
+    actual_df['year_offset'] = actual_df['date'].dt.year - first_year
+
+    call_pacing = {}
+    dist_pacing = {}
+
+    for year_offset, group in actual_df.groupby('year_offset'):
+        calls = group.loc[group['type'].isin(OUTFLOW_TYPES), 'amount'].sum()
+        dists = group.loc[group['type'].isin(INFLOW_TYPES), 'amount'].sum()
+        if calls > 0:
+            call_pacing[int(year_offset)] = round(calls / commitment, 4)
+        if dists > 0:
+            dist_pacing[int(year_offset)] = round(dists / commitment, 4)
+
+    return {
+        'call_pacing': call_pacing,
+        'dist_pacing': dist_pacing,
+        'commitment': commitment,
+        'first_year': int(first_year),
+    }
+
+
+@st.cache_data(ttl=300)
 def get_scenarios_cached(_conn_id):
     """Holt alle Szenarien als list[dict]"""
     with get_connection() as conn:
