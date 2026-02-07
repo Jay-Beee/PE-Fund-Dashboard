@@ -20,7 +20,8 @@ from datetime import date, datetime
 from database import get_connection, clear_cache
 from cashflow_db import (
     insert_cashflow, delete_cashflow, bulk_insert_cashflows,
-    insert_scenario, update_fund_commitment
+    insert_scenario, update_fund_commitment,
+    delete_all_scenario_cashflows, delete_scenario
 )
 from cashflow_queries import (
     get_cashflows_for_fund_cached, get_cumulative_cashflows_cached,
@@ -135,7 +136,7 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
     scenarios = get_scenarios_cached(conn_id)
     scenario_names = [s['scenario_name'] for s in scenarios]
 
-    sc1, sc2 = st.columns([3, 1])
+    sc1, sc2, sc3 = st.columns([3, 1, 1])
     with sc1:
         selected_scenario = st.selectbox(
             "Szenario", options=scenario_names, key="cf_scenario_select"
@@ -152,6 +153,28 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
                     st.rerun()
                 else:
                     st.warning("Bitte einen Namen eingeben.")
+    with sc3:
+        with st.popover("🗑️ Szenario verwalten"):
+            st.markdown("**Cashflows löschen**")
+            if st.button("🗑️ Alle Cashflows dieses Szenarios löschen",
+                         key="cf_delete_scenario_cfs"):
+                deleted = delete_all_scenario_cashflows(conn, fund_id, selected_scenario)
+                clear_cache()
+                st.success(f"{deleted} Cashflows aus '{selected_scenario}' gelöscht.")
+                st.rerun()
+
+            st.markdown("---")
+            st.markdown("**Szenario löschen**")
+            if selected_scenario == 'base':
+                st.caption("Das Base-Szenario kann nicht gelöscht werden.")
+            else:
+                st.caption(f"Löscht '{selected_scenario}' inkl. aller Cashflows (alle Fonds).")
+                if st.button(f"⚠️ Szenario '{selected_scenario}' endgültig löschen",
+                             key="cf_delete_scenario"):
+                    deleted_cf, deleted_sc = delete_scenario(conn, selected_scenario)
+                    clear_cache()
+                    st.success(f"Szenario '{selected_scenario}' gelöscht ({deleted_cf} Cashflows entfernt).")
+                    st.rerun()
 
     st.markdown("---")
 
