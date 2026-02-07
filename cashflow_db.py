@@ -161,6 +161,42 @@ def delete_forecast_cashflows(conn, fund_id, scenario_name):
         return deleted
 
 
+def delete_all_scenario_cashflows(conn, fund_id, scenario_name):
+    """Löscht ALLE Cashflows (Ist + Plan) für einen Fonds in einem Szenario"""
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM cashflows WHERE fund_id = %s AND scenario_name = %s",
+            (fund_id, scenario_name)
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        return deleted
+
+
+def delete_scenario(conn, scenario_name):
+    """Löscht ein Szenario und alle zugehörigen Cashflows.
+
+    Das 'base'-Szenario kann nicht gelöscht werden.
+    Returns: (deleted_cashflows, scenario_deleted)
+    """
+    if scenario_name == 'base':
+        return 0, False
+    with conn.cursor() as cursor:
+        # Zuerst alle Cashflows dieses Szenarios löschen
+        cursor.execute(
+            "DELETE FROM cashflows WHERE scenario_name = %s",
+            (scenario_name,)
+        )
+        deleted_cf = cursor.rowcount
+        # Dann das Szenario selbst
+        cursor.execute(
+            "DELETE FROM scenarios WHERE scenario_name = %s",
+            (scenario_name,)
+        )
+        conn.commit()
+        return deleted_cf, True
+
+
 def get_cashflows_for_fund(conn, fund_id, scenario_name=None):
     """Holt alle Cashflows für einen Fonds, sortiert nach Datum"""
     with conn.cursor() as cursor:
