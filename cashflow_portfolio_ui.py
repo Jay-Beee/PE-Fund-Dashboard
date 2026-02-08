@@ -52,7 +52,7 @@ def render_portfolio_section(conn, conn_id):
             return
 
         selected_df = all_funds_df[all_funds_df['fund_name'].isin(selected_names)]
-        fund_ids = selected_df['fund_id'].tolist()
+        fund_ids = tuple(int(x) for x in selected_df['fund_id'].tolist())
 
         # --- Basiswährung + Szenario ---
         pc1, pc2 = st.columns(2)
