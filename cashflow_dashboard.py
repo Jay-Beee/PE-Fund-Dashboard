@@ -24,7 +24,7 @@ def render_dashboard_widgets(conn_id, base_currency='EUR'):
     if all_funds_df.empty:
         return
 
-    fund_ids = all_funds_df['fund_id'].tolist()
+    fund_ids = tuple(int(x) for x in all_funds_df['fund_id'].tolist())
 
     # Dashboard-Währung auswahl
     dash_ccy = st.selectbox(
