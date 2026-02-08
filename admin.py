@@ -3,6 +3,7 @@ import pandas as pd
 import psycopg2
 from datetime import datetime, date
 from database import get_connection, format_quarter, clear_cache
+from cashflow_fx_ui import render_fx_management
 
 
 def render_admin_tab(conn):
@@ -1771,3 +1772,10 @@ def render_admin_tab(conn):
                         st.rerun()
         else:
             st.info("Keine Placement Agents vorhanden.")
+
+    # ================================================================
+    # FX-Verwaltung
+    # ================================================================
+    st.markdown("---")
+    conn_id = id(conn)
+    render_fx_management(conn, conn_id)

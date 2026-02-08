@@ -617,6 +617,85 @@ def get_portfolio_actual_vs_forecast_cached(_conn_id, fund_ids, base_currency, s
 # ============================================================================
 
 @st.cache_data(ttl=300)
+def get_funding_gap_cached(_conn_id, fund_ids, base_currency, period='quarter', scenario_name='base'):
+    """Funding-Gap Analyse: pro Periode erwartete Calls vs. Distributions.
+
+    Nutzt nur is_actual=False (geplante Cashflows).
+    Returns DataFrame: period_label, expected_calls, expected_distributions,
+                       net_funding_need, cumulative_funding_need
+    """
+    multi_df = get_cashflows_multi_fund_base_currency_cached(
+        _conn_id, fund_ids, base_currency, scenario_name
+    )
+    if multi_df.empty or 'amount_base' not in multi_df.columns:
+        return pd.DataFrame()
+
+    # Nur geplante Cashflows
+    planned = multi_df[multi_df['is_actual'] == False].copy()
+    if planned.empty:
+        return pd.DataFrame()
+
+    valid = planned.dropna(subset=['amount_base']).copy()
+    if valid.empty:
+        return pd.DataFrame()
+
+    if period == 'quarter':
+        valid['period_label'] = valid['date'].dt.to_period('Q').astype(str)
+    else:
+        valid['period_label'] = valid['date'].dt.year.astype(str)
+
+    grouped = valid.groupby('period_label').apply(
+        lambda g: pd.Series({
+            'expected_calls': g.loc[g['type'].isin(OUTFLOW_TYPES), 'amount_base'].sum(),
+            'expected_distributions': g.loc[g['type'].isin(INFLOW_TYPES), 'amount_base'].sum(),
+        })
+    ).reset_index()
+
+    grouped['net_funding_need'] = grouped['expected_distributions'] - grouped['expected_calls']
+    grouped = grouped.sort_values('period_label').reset_index(drop=True)
+    grouped['cumulative_funding_need'] = grouped['net_funding_need'].cumsum()
+
+    return grouped
+
+
+@st.cache_data(ttl=300)
+def get_cash_reserve_simulation_cached(_conn_id, fund_ids, base_currency, start_balance,
+                                        scenario_name='base', include_actuals=True):
+    """Cash-Reserve Simulation: simuliert Kontoverlauf über Zeit.
+
+    Startet mit start_balance, addiert Inflows, subtrahiert Outflows.
+    Returns DataFrame: date, inflow, outflow, net, balance
+    """
+    multi_df = get_cashflows_multi_fund_base_currency_cached(
+        _conn_id, fund_ids, base_currency, scenario_name
+    )
+    if multi_df.empty or 'amount_base' not in multi_df.columns:
+        return pd.DataFrame()
+
+    valid = multi_df.dropna(subset=['amount_base']).copy()
+    if not include_actuals:
+        valid = valid[valid['is_actual'] == False]
+    if valid.empty:
+        return pd.DataFrame()
+
+    # Pro Datum aggregieren
+    daily = valid.groupby('date').apply(
+        lambda g: pd.Series({
+            'inflow': g.loc[g['type'].isin(INFLOW_TYPES), 'amount_base'].sum(),
+            'outflow': g.loc[g['type'].isin(OUTFLOW_TYPES), 'amount_base'].sum(),
+        })
+    ).reset_index()
+
+    daily = daily.sort_values('date').reset_index(drop=True)
+    daily['net'] = daily['inflow'] - daily['outflow']
+
+    # Kumulativer Kontostand
+    daily['balance'] = start_balance + daily['net'].cumsum()
+
+    return daily
+
+
+@st.cache_data(ttl=300)
 def get_upcoming_capital_calls_cached(_conn_id, days_ahead=90):
     """Anstehende Capital Calls (is_actual=False, type=capital_call, in Zukunft)."""
     today = date.today()

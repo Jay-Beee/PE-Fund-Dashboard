@@ -39,6 +39,10 @@ from cashflow_dashboard import render_dashboard_widgets
 from cashflow_alerts import render_alerts_banner
 from cashflow_actual_vs_forecast import render_actual_vs_forecast_section
 from cashflow_portfolio_ui import render_portfolio_section
+from cashflow_liquidity_ui import render_liquidity_section
+from cashflow_export import (
+    export_cashflows_excel, export_fund_report_pdf
+)
 
 # Typ-Mapping: intern → deutsch
 TYPE_LABELS = {
@@ -271,6 +275,16 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
 
         st.dataframe(show_df, width='stretch', hide_index=True)
 
+        # Excel Export Button
+        excel_data = export_cashflows_excel(cf_df, selected_fund_name, currency, selected_scenario)
+        st.download_button(
+            label="📥 Excel Export",
+            data=excel_data,
+            file_name=f"cashflows_{selected_fund_name}_{selected_scenario}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="cf_excel_export_btn"
+        )
+
         # Lösch-Sektion
         with st.expander("🗑️ Cashflow löschen"):
             delete_options = {
@@ -335,6 +349,22 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
             if fig:
                 st.pyplot(fig)
                 plt.close(fig)
+
+        # PDF Export Button
+        summary_for_pdf = get_cashflow_summary_cached(conn_id, fund_id, selected_scenario)
+        periodic_for_pdf = get_periodic_cashflows_cached(conn_id, fund_id, 'quarter', selected_scenario)
+        pdf_data = export_fund_report_pdf(
+            selected_fund_name, currency, summary_for_pdf,
+            cumulative_df, periodic_for_pdf, commit_info
+        )
+        if pdf_data:
+            st.download_button(
+                label="📄 Fund Report PDF",
+                data=pdf_data,
+                file_name=f"fund_report_{selected_fund_name}.pdf",
+                mime="application/pdf",
+                key="cf_pdf_export_btn"
+            )
 
     st.markdown("---")
 
@@ -466,3 +496,10 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
     # I) Portfolio-Aggregation
     # ================================================================
     render_portfolio_section(conn, conn_id)
+
+    st.markdown("---")
+
+    # ================================================================
+    # J) Liquiditätsplanung
+    # ================================================================
+    render_liquidity_section(conn, conn_id)

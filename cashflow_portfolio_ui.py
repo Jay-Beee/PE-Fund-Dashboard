@@ -25,6 +25,7 @@ from cashflow_portfolio_charts import (
     create_actual_vs_forecast_chart,
     create_deviation_chart,
 )
+from cashflow_export import export_portfolio_excel, export_portfolio_report_pdf
 
 CURRENCY_OPTIONS = ['EUR', 'USD', 'CHF', 'GBP']
 
@@ -105,7 +106,39 @@ def render_portfolio_section(conn, conn_id):
                                   f'Netto ({base_currency})', 'DPI']
             st.dataframe(display_bd, hide_index=True, use_container_width=True)
 
+        # --- Export Buttons ---
+        cumulative_df = get_portfolio_cumulative_cashflows_cached(
+            conn_id, fund_ids, base_currency, selected_scenario
+        )
+        periodic_df = get_portfolio_periodic_cashflows_cached(
+            conn_id, fund_ids, base_currency, 'quarter', selected_scenario
+        )
+
+        exp_col1, exp_col2 = st.columns(2)
+        with exp_col1:
+            excel_data = export_portfolio_excel(breakdown_df, summary, periodic_df, base_currency)
+            st.download_button(
+                label="📥 Portfolio Export (Excel)",
+                data=excel_data,
+                file_name=f"portfolio_{base_currency}_{selected_scenario}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="pf_excel_export_btn"
+            )
+        with exp_col2:
+            pdf_data = export_portfolio_report_pdf(
+                summary, breakdown_df, cumulative_df, periodic_df, base_currency
+            )
+            if pdf_data:
+                st.download_button(
+                    label="📄 Portfolio Report PDF",
+                    data=pdf_data,
+                    file_name=f"portfolio_report_{base_currency}.pdf",
+                    mime="application/pdf",
+                    key="pf_pdf_export_btn"
+                )
+
         # --- Charts ---
+        # (cumulative_df and periodic_df already loaded above)
         cumulative_df = get_portfolio_cumulative_cashflows_cached(
             conn_id, fund_ids, base_currency, selected_scenario
         )
