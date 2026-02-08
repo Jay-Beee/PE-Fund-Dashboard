@@ -1,188 +1,104 @@
 """
-Cashflow Planning Tool — Portfolio-Aggregation UI
+Cashflow Planning Tool — Dashboard-KPI-Widgets
 
-Fonds-Multiselect, Basiswährung, Portfolio-KPIs, Charts und
-aggregierte Ist vs. Forecast Analyse.
+Rendert Portfolio-KPIs am Anfang des Cashflow-Tabs.
 """
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+from datetime import date
 
 from cashflow_queries import (
     get_all_funds_for_cashflow_cached,
-    get_portfolio_cumulative_cashflows_cached,
-    get_portfolio_periodic_cashflows_cached,
-    get_portfolio_summary_cached,
-    get_portfolio_fund_breakdown_cached,
-    get_scenarios_cached,
-    get_portfolio_actual_vs_forecast_cached,
-)
-from cashflow_portfolio_charts import (
-    create_portfolio_j_curve_chart,
-    create_portfolio_bar_chart,
-    create_portfolio_fund_contribution_chart,
-    create_actual_vs_forecast_chart,
-    create_deviation_chart,
+    get_cashflow_summary_cached,
+    get_upcoming_capital_calls_cached,
 )
 
-CURRENCY_OPTIONS = ['EUR', 'USD', 'CHF', 'GBP']
+CURRENCY_OPTIONS = ['Gemischt', 'EUR', 'USD', 'CHF', 'GBP']
 
 
-def render_portfolio_section(conn, conn_id):
-    """Rendert die komplette Portfolio-Aggregations-Sektion."""
+def render_dashboard_widgets(conn_id, base_currency='EUR'):
+    """Rendert Portfolio-KPIs am Anfang des Cashflow-Tabs."""
 
-    with st.expander("📊 Portfolio-Aggregation", expanded=False):
-        all_funds_df = get_all_funds_for_cashflow_cached(conn_id)
-        if all_funds_df.empty:
-            st.info("Keine Fonds vorhanden.")
-            return
+    all_funds_df = get_all_funds_for_cashflow_cached(conn_id)
+    if all_funds_df.empty:
+        return
 
-        # --- Fonds-Multiselect ---
-        fund_names = all_funds_df['fund_name'].tolist()
-        selected_names = st.multiselect(
-            "Fonds auswählen",
-            options=fund_names,
-            default=fund_names,
-            key="pf_fund_select"
-        )
+    fund_ids = tuple(int(x) for x in all_funds_df['fund_id'].tolist())
 
-        if not selected_names:
-            st.info("Bitte mindestens einen Fonds auswählen.")
-            return
+    # Dashboard-Währung auswahl
+    dash_ccy = st.selectbox(
+        "Dashboard-Währung", options=CURRENCY_OPTIONS,
+        index=0, key="dash_ccy_select"
+    )
+    use_mixed = (dash_ccy == 'Gemischt')
 
-        selected_df = all_funds_df[all_funds_df['fund_name'].isin(selected_names)]
-        fund_ids = tuple(int(x) for x in selected_df['fund_id'].tolist())
+    # Metriken sammeln
+    total_commitment = 0.0
+    total_unfunded = 0.0
+    total_called = 0.0
+    total_distributed = 0.0
+    active_funds = 0
+    dpi_values = []
 
-        # --- Basiswährung + Szenario ---
-        pc1, pc2 = st.columns(2)
-        with pc1:
-            base_currency = st.selectbox(
-                "Basiswährung", options=CURRENCY_OPTIONS, key="pf_base_ccy"
-            )
-        with pc2:
-            scenarios = get_scenarios_cached(conn_id)
-            scenario_names = [s['scenario_name'] for s in scenarios]
-            selected_scenario = st.selectbox(
-                "Szenario", options=scenario_names, key="pf_scenario"
-            )
+    if use_mixed:
+        # Gemischt: keine FX-Konversion, einfach summieren
+        for _, row in all_funds_df.iterrows():
+            fid = int(row['fund_id'])
+            commit = row.get('commitment_amount') or 0
+            unfunded = row.get('unfunded_amount') or 0
+            total_commitment += commit
+            total_unfunded += unfunded
 
-        # --- Portfolio Summary ---
-        summary = get_portfolio_summary_cached(conn_id, fund_ids, base_currency, selected_scenario)
+            summary = get_cashflow_summary_cached(conn_id, fid, 'base')
+            called = summary.get('total_called', 0)
+            distributed = summary.get('total_distributed', 0)
+            total_called += called
+            total_distributed += distributed
 
-        # FX-Warnungen
-        if summary.get('fx_warnings'):
-            st.warning(
-                f"⚠️ Fehlende FX-Raten für: {', '.join(summary['fx_warnings'])}. "
-                f"Beträge ohne Rate werden ignoriert."
-            )
+            if called > 0 or distributed > 0:
+                active_funds += 1
+                dpi_values.append(summary.get('dpi', 0))
+    else:
+        # Mit FX-Konversion über Portfolio-Summary
+        from cashflow_queries import get_portfolio_summary_cached
+        summary = get_portfolio_summary_cached(conn_id, fund_ids, dash_ccy, 'base')
+        total_commitment = summary['total_commitment']
+        total_unfunded = summary['total_unfunded']
+        total_called = summary['total_called']
+        total_distributed = summary['total_distributed']
+        active_funds = summary['num_funds']
+        dpi_values = [summary['portfolio_dpi']]
 
-        # KPI-Zeile
-        k1, k2, k3, k4 = st.columns(4)
-        with k1:
-            st.metric("Total Commitment", f"{summary['total_commitment']:,.0f} {base_currency}")
-        with k2:
-            st.metric("Total Called", f"{summary['total_called']:,.0f} {base_currency}")
-        with k3:
-            st.metric("Total Distributed", f"{summary['total_distributed']:,.0f} {base_currency}")
-        with k4:
-            st.metric("Portfolio DPI", f"{summary['portfolio_dpi']:.2f}x")
+    avg_dpi = sum(dpi_values) / len(dpi_values) if dpi_values else 0.0
+    ccy_label = 'Mix' if use_mixed else dash_ccy
 
-        # --- Fonds-Aufschlüsselung ---
-        breakdown_df = get_portfolio_fund_breakdown_cached(conn_id, fund_ids, base_currency, selected_scenario)
-        if not breakdown_df.empty:
-            st.markdown("**Fonds-Aufschlüsselung**")
-            display_bd = breakdown_df.copy()
-            for col in ['commitment_base', 'called_base', 'distributed_base', 'net_base']:
-                if col in display_bd.columns:
-                    display_bd[col] = display_bd[col].apply(
-                        lambda x: f"{x:,.0f}" if pd.notna(x) else "n/a"
-                    )
-            if 'dpi' in display_bd.columns:
-                display_bd['dpi'] = display_bd['dpi'].apply(lambda x: f"{x:.2f}x")
-            display_bd.columns = ['Fonds', 'Währung', f'Commitment ({base_currency})',
-                                  f'Called ({base_currency})', f'Distributed ({base_currency})',
-                                  f'Netto ({base_currency})', 'DPI']
-            st.dataframe(display_bd, hide_index=True, use_container_width=True)
+    # Nächster Call
+    upcoming = get_upcoming_capital_calls_cached(conn_id, days_ahead=90)
+    next_call_str = "–"
+    if not upcoming.empty:
+        first = upcoming.iloc[0]
+        next_call_str = f"{first['fund_name']}: {first['amount']:,.0f} {first['currency']} ({first['days_until']}d)"
 
-        # --- Charts ---
-        cumulative_df = get_portfolio_cumulative_cashflows_cached(
-            conn_id, fund_ids, base_currency, selected_scenario
-        )
-        periodic_df = get_portfolio_periodic_cashflows_cached(
-            conn_id, fund_ids, base_currency, 'quarter', selected_scenario
-        )
+    # Zeile 1
+    r1c1, r1c2, r1c3, r1c4 = st.columns(4)
+    with r1c1:
+        st.metric("Total Commitment", f"{total_commitment:,.0f} {ccy_label}")
+    with r1c2:
+        st.metric("Total Unfunded", f"{total_unfunded:,.0f} {ccy_label}")
+    with r1c3:
+        st.metric("Total Called", f"{total_called:,.0f} {ccy_label}")
+    with r1c4:
+        st.metric("Total Distributed", f"{total_distributed:,.0f} {ccy_label}")
 
-        chart_tab1, chart_tab2, chart_tab3 = st.tabs([
-            "Portfolio J-Curve", "Portfolio Balken", "Fonds-Beitrag"
-        ])
-
-        with chart_tab1:
-            fig = create_portfolio_j_curve_chart(cumulative_df, base_currency)
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                st.info("Keine Daten für Portfolio J-Curve.")
-
-        with chart_tab2:
-            period = st.radio(
-                "Aggregation", options=['quarter', 'year'],
-                format_func=lambda x: 'Quartal' if x == 'quarter' else 'Jahr',
-                horizontal=True, key="pf_period_toggle"
-            )
-            p_df = get_portfolio_periodic_cashflows_cached(
-                conn_id, fund_ids, base_currency, period, selected_scenario
-            )
-            fig = create_portfolio_bar_chart(p_df, base_currency)
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                st.info("Keine Daten für Portfolio-Balkendiagramm.")
-
-        with chart_tab3:
-            fig = create_portfolio_fund_contribution_chart(breakdown_df, base_currency)
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)
-            else:
-                st.info("Keine Daten für Fonds-Beitrags-Chart.")
-
-        # --- Portfolio Ist vs. Forecast ---
-        st.markdown("---")
-        st.markdown("**Portfolio Ist vs. Forecast**")
-        avf = get_portfolio_actual_vs_forecast_cached(
-            conn_id, fund_ids, base_currency, selected_scenario
-        )
-        metrics = avf['metrics']
-
-        if avf['actual_cumulative'].empty and avf['forecast_cumulative'].empty:
-            st.info("Keine Ist- oder Forecast-Daten für die ausgewählten Fonds.")
-        else:
-            m1, m2, m3, m4 = st.columns(4)
-            with m1:
-                st.metric("Calls realisiert", f"{metrics['pct_calls_realized']:.1f}%")
-            with m2:
-                st.metric("Dists realisiert", f"{metrics['pct_dists_realized']:.1f}%")
-            with m3:
-                st.metric("Tracking Error", f"{metrics['tracking_error']:,.0f} {base_currency}")
-            with m4:
-                st.metric("Ø Abweichung", f"{metrics['mean_deviation']:,.0f} {base_currency}")
-
-            fig = create_actual_vs_forecast_chart(
-                avf['actual_cumulative'], avf['forecast_cumulative'],
-                'Portfolio: Ist vs. Forecast', base_currency
-            )
-            if fig:
-                st.pyplot(fig)
-                plt.close(fig)
-
-            if not avf['periodic_deviation'].empty:
-                fig = create_deviation_chart(
-                    avf['periodic_deviation'],
-                    'Portfolio: Periodische Abweichung', base_currency
-                )
-                if fig:
-                    st.pyplot(fig)
-                    plt.close(fig)
+    # Zeile 2
+    r2c1, r2c2, r2c3, r2c4 = st.columns(4)
+    with r2c1:
+        portfolio_dpi = total_distributed / total_called if total_called > 0 else 0.0
+        st.metric("Portfolio DPI", f"{portfolio_dpi:.2f}x")
+    with r2c2:
+        st.metric("Nächster Call", next_call_str)
+    with r2c3:
+        st.metric("Aktive Fonds", str(active_funds))
+    with r2c4:
+        st.metric("Ø DPI", f"{avg_dpi:.2f}x")
