@@ -314,6 +314,27 @@ def insert_exchange_rate(conn, from_currency, to_currency, rate_date, rate):
         return cursor.fetchone()[0]
 
 
+def get_all_exchange_rates(conn):
+    """Holt alle Wechselkurse, sortiert nach Datum DESC.
+    Returns: list[dict] mit rate_id, from_currency, to_currency, rate_date, rate
+    """
+    with conn.cursor() as cursor:
+        cursor.execute("""
+        SELECT rate_id, from_currency, to_currency, rate_date, rate
+        FROM exchange_rates
+        ORDER BY rate_date DESC, from_currency, to_currency
+        """)
+        columns = [desc[0] for desc in cursor.description]
+        return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+
+def delete_exchange_rate(conn, rate_id):
+    """Löscht einen Wechselkurs."""
+    with conn.cursor() as cursor:
+        cursor.execute("DELETE FROM exchange_rates WHERE rate_id = %s", (rate_id,))
+        conn.commit()
+
+
 def get_exchange_rate(conn, from_currency, to_currency, rate_date):
     """Holt den nächsten verfügbaren Wechselkurs vor oder am angegebenen Datum"""
     if from_currency == to_currency:
