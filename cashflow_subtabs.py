@@ -11,16 +11,17 @@ Ersetzt render_cashflow_tab() mit 5 Sub-Tabs:
 
 import streamlit as st
 
-from cashflow_dashboard import render_dashboard_widgets
-from cashflow_alerts import render_alerts_banner
-from cashflow_portfolio_ui import render_portfolio_section
-from cashflow_ui import render_fund_detail_section
-from cashflow_pipeline_ui import render_pipeline_section
-from cashflow_liquidity_ui import render_liquidity_section
-
 
 def render_cashflow_subtabs(conn, conn_id, selected_fund_ids, selected_fund_names):
     """Ersetzt render_cashflow_tab(). Erstellt 5 Sub-Tabs."""
+
+    # Lazy imports to avoid circular import issues
+    from cashflow_dashboard import render_dashboard_widgets
+    from cashflow_alerts import render_alerts_banner
+    from cashflow_portfolio_ui import render_portfolio_section
+    from cashflow_ui import render_fund_detail_section
+    from cashflow_pipeline_ui import render_pipeline_section
+    from cashflow_liquidity_ui import render_liquidity_section
 
     st.header("Cashflow Planning")
 
