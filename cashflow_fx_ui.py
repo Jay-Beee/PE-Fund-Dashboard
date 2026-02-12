@@ -38,7 +38,7 @@ def render_fx_management(conn, conn_id):
             display_df.columns = ['Von', 'Nach', 'Datum', 'Rate']
             display_df['Datum'] = pd.to_datetime(display_df['Datum']).dt.strftime('%Y-%m-%d')
             display_df['Rate'] = display_df['Rate'].apply(lambda x: f"{x:.6f}")
-            st.dataframe(display_df, hide_index=True, use_container_width=True)
+            st.dataframe(display_df, hide_index=True, width='stretch')
 
             # Löschen
             with st.popover("🗑️ Rate löschen"):

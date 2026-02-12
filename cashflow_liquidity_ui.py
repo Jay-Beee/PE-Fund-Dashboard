@@ -135,7 +135,7 @@ def render_liquidity_section(conn, conn_id):
                                  f'Erw. Ausschüttungen ({base_currency})',
                                  f'Netto ({base_currency})',
                                  f'Kumulativ ({base_currency})']
-            st.dataframe(display_fg, hide_index=True, use_container_width=True)
+            st.dataframe(display_fg, hide_index=True, width='stretch')
         else:
             st.info("Keine geplanten Cashflows (is_actual=False) für Funding-Gap vorhanden.")
 
@@ -156,7 +156,7 @@ def render_liquidity_section(conn, conn_id):
                                  f'Abfluss ({base_currency})',
                                  f'Netto ({base_currency})',
                                  f'Kontostand ({base_currency})']
-            st.dataframe(display_cr, hide_index=True, use_container_width=True)
+            st.dataframe(display_cr, hide_index=True, width='stretch')
         else:
             st.info("Keine Cashflow-Daten für Cash-Reserve Simulation vorhanden.")
 

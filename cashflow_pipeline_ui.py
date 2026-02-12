@@ -118,11 +118,11 @@ def _render_fund_card(conn, conn_id, fund, status):
                 if next_s == 'committed':
                     # Special promote flow
                     if st.button("Promote", key=f"promote_{fund_id}",
-                                 type="primary", use_container_width=True):
+                                 type="primary", width='stretch'):
                         st.session_state[f"show_promote_{fund_id}"] = True
                 else:
                     if st.button(f"→ {STATUS_LABELS[next_s]}", key=f"advance_{fund_id}",
-                                 type="primary", use_container_width=True):
+                                 type="primary", width='stretch'):
                         try:
                             change_fund_status(conn, fund_id, next_s)
                             clear_cache()
@@ -133,7 +133,7 @@ def _render_fund_card(conn, conn_id, fund, status):
         with btn_col2:
             if 'declined' in valid_next:
                 if st.button("Decline", key=f"decline_{fund_id}",
-                             use_container_width=True):
+                             width='stretch'):
                     st.session_state[f"show_decline_{fund_id}"] = True
 
         # Promote dialog
@@ -217,7 +217,7 @@ def _render_pipeline_table(conn, conn_id):
     if 'Status' in display_df.columns:
         display_df['Status'] = display_df['Status'].map(STATUS_LABELS).fillna(display_df['Status'])
 
-    st.dataframe(display_df, hide_index=True, use_container_width=True)
+    st.dataframe(display_df, hide_index=True, width='stretch')
 
     # Inline edit for selected fund
     with st.expander("Pipeline-Fonds bearbeiten"):
@@ -399,4 +399,4 @@ def _render_history(conn_id):
         if col in display_df.columns:
             display_df[col] = display_df[col].map(STATUS_LABELS).fillna(display_df[col])
 
-    st.dataframe(display_df, hide_index=True, use_container_width=True)
+    st.dataframe(display_df, hide_index=True, width='stretch')

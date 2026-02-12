@@ -65,4 +65,4 @@ def render_actual_vs_forecast_section(conn_id, fund_id, fund_name, currency, sce
                     detail_df[col] = detail_df[col].apply(lambda x: f"{x:,.0f}")
             detail_df.columns = ['Periode', f'Ist ({currency})', f'Forecast ({currency})',
                                  f'Abweichung ({currency})']
-            st.dataframe(detail_df, hide_index=True, use_container_width=True)
+            st.dataframe(detail_df, hide_index=True, width='stretch')

@@ -479,7 +479,7 @@ def _render_forecast_preview(forecast, currency):
         tdf['Calls'] = tdf['Calls'].apply(lambda x: f"{x:,.0f}")
         tdf['Distributions'] = tdf['Distributions'].apply(lambda x: f"{x:,.0f}")
         tdf['Netto'] = tdf['Netto'].apply(lambda x: f"{x:,.0f}")
-        st.dataframe(tdf, hide_index=True, use_container_width=True)
+        st.dataframe(tdf, hide_index=True, width='stretch')
 
     st.caption(f"Forecast: {len(forecast)} Einträge generiert")
 

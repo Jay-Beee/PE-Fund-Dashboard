@@ -108,7 +108,7 @@ def render_portfolio_section(conn, conn_id):
             display_bd.columns = ['Fonds', 'Währung', f'Commitment ({base_currency})',
                                   f'Called ({base_currency})', f'Distributed ({base_currency})',
                                   f'Netto ({base_currency})', 'DPI']
-            st.dataframe(display_bd, hide_index=True, use_container_width=True)
+            st.dataframe(display_bd, hide_index=True, width='stretch')
 
         # --- Export Buttons ---
         cumulative_df = get_portfolio_cumulative_cashflows_cached(

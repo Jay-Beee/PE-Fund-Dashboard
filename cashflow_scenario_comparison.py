@@ -145,7 +145,7 @@ def _render_metrics_table(scenario_data, currency):
         df['DPI'] = df['DPI'].apply(lambda x: f"{x:.2f}x")
 
     st.markdown("**Metrik-Vergleich**")
-    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.dataframe(df, hide_index=True, width='stretch')
 
 
 def _create_jcurve_overlay(scenario_data, fund_name, currency):
