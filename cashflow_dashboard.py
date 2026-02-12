@@ -102,3 +102,31 @@ def render_dashboard_widgets(conn_id, base_currency='EUR'):
         st.metric("Aktive Fonds", str(active_funds))
     with r2c4:
         st.metric("Ø DPI", f"{avg_dpi:.2f}x")
+
+    # Zeile 3: Pipeline-KPIs (nur wenn Pipeline-Fonds existieren)
+    try:
+        from cashflow_pipeline_queries import get_pipeline_summary_cached
+        pipe_summary = get_pipeline_summary_cached(conn_id)
+        if pipe_summary['total_pipeline'] > 0:
+            st.markdown("---")
+            st.caption("Pipeline")
+            r3c1, r3c2, r3c3, r3c4 = st.columns(4)
+            with r3c1:
+                st.metric("Pipeline-Fonds", str(pipe_summary['total_pipeline']))
+            with r3c2:
+                st.metric("Prob.-Gew. Commitment",
+                           f"{pipe_summary['probability_weighted_commitment']:,.0f}")
+            with r3c3:
+                upcoming = pipe_summary['upcoming_next_steps']
+                if upcoming:
+                    ns = upcoming[0]
+                    st.metric("Nächste DD-Deadline",
+                              f"{ns['next_step_date']}")
+                else:
+                    st.metric("Nächste DD-Deadline", "–")
+            with r3c4:
+                st.metric("Avg DD-Score",
+                           f"{pipe_summary['avg_dd_score']:.1f}"
+                           if pipe_summary['avg_dd_score'] else "–")
+    except ImportError:
+        pass

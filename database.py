@@ -7,6 +7,7 @@ from cashflow_db import (
     ensure_cashflows_table, ensure_scenarios_table,
     ensure_exchange_rates_table, ensure_cashflow_fund_columns
 )
+from cashflow_pipeline_db import ensure_fund_status_column, ensure_pipeline_tables
 
 # === DATABASE CONFIGURATION ===
 DATABASE_CONFIG = {
@@ -395,6 +396,10 @@ def initialize_database(conn):
     ensure_scenarios_table(conn)
     ensure_cashflows_table(conn)
     ensure_exchange_rates_table(conn)
+
+    # Pipeline-Tabellen (Phase 5)
+    ensure_fund_status_column(conn)
+    ensure_pipeline_tables(conn)
 
     migrate_to_gp_table(conn)
     migrate_existing_data_if_needed(conn)

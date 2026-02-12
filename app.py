@@ -28,7 +28,7 @@ from queries import (
 )
 from charts import get_mekko_chart_cached, clear_mekko_cache
 from admin import render_admin_tab
-from cashflow_ui import render_cashflow_tab
+from cashflow_subtabs import render_cashflow_subtabs
 
 # === SESSION STATE INITIALISIERUNG ===
 if 'filter_version' not in st.session_state:
@@ -684,7 +684,7 @@ def show_main_app():
 
             # TAB CASHFLOW PLANNING
             with tab_cf:
-                render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names)
+                render_cashflow_subtabs(conn, conn_id, selected_fund_ids, selected_fund_names)
 
             # TAB 7: ADMIN (nur für Admins sichtbar)
             if is_admin() and tab7 is not None:

@@ -190,15 +190,30 @@ def get_scenarios_cached(_conn_id):
 
 
 @st.cache_data(ttl=300)
-def get_all_funds_for_cashflow_cached(_conn_id):
-    """Holt alle Fonds mit Cashflow-relevanten Feldern"""
+def get_all_funds_for_cashflow_cached(_conn_id, include_pipeline=False):
+    """Holt alle Fonds mit Cashflow-relevanten Feldern.
+    include_pipeline=False: nur committed/active/harvesting/closed (Default).
+    include_pipeline=True: alle Fonds inkl. Pipeline.
+    """
     with get_connection() as conn:
-        query = """
-        SELECT fund_id, fund_name, currency, commitment_amount,
-               unfunded_amount, expected_end_date
-        FROM funds ORDER BY fund_name
-        """
-        return pd.read_sql_query(query, conn)
+        if include_pipeline:
+            query = """
+            SELECT fund_id, fund_name, currency, commitment_amount,
+                   unfunded_amount, expected_end_date,
+                   COALESCE(status, 'active') as status
+            FROM funds ORDER BY fund_name
+            """
+            return pd.read_sql_query(query, conn)
+        else:
+            query = """
+            SELECT fund_id, fund_name, currency, commitment_amount,
+                   unfunded_amount, expected_end_date,
+                   COALESCE(status, 'active') as status
+            FROM funds
+            WHERE COALESCE(status, 'active') IN ('committed', 'active', 'harvesting', 'closed')
+            ORDER BY fund_name
+            """
+            return pd.read_sql_query(query, conn)
 
 
 # ============================================================================

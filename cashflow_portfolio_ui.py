@@ -33,8 +33,12 @@ CURRENCY_OPTIONS = ['EUR', 'USD', 'CHF', 'GBP']
 def render_portfolio_section(conn, conn_id):
     """Rendert die komplette Portfolio-Aggregations-Sektion."""
 
-    with st.expander("📊 Portfolio-Aggregation", expanded=False):
-        all_funds_df = get_all_funds_for_cashflow_cached(conn_id)
+    with st.expander("Portfolio-Aggregation", expanded=True):
+        include_pipeline = st.checkbox(
+            "Inkl. Pipeline-Fonds (gewichtet)", value=False,
+            key="pf_include_pipeline"
+        )
+        all_funds_df = get_all_funds_for_cashflow_cached(conn_id, include_pipeline=include_pipeline)
         if all_funds_df.empty:
             st.info("Keine Fonds vorhanden.")
             return

@@ -35,11 +35,7 @@ from cashflow_charts import (
 )
 from cashflow_forecast_ui import render_forecast_section
 from cashflow_scenario_comparison import render_scenario_comparison
-from cashflow_dashboard import render_dashboard_widgets
-from cashflow_alerts import render_alerts_banner
 from cashflow_actual_vs_forecast import render_actual_vs_forecast_section
-from cashflow_portfolio_ui import render_portfolio_section
-from cashflow_liquidity_ui import render_liquidity_section
 from cashflow_export import (
     export_cashflows_excel, export_fund_report_pdf
 )
@@ -56,26 +52,19 @@ LABEL_TO_TYPE = {v: k for k, v in TYPE_LABELS.items()}
 
 
 def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
-    """Rendert den kompletten Cashflow-Planning-Tab."""
+    """Legacy-Wrapper — leitet auf render_fund_detail_section weiter."""
+    render_fund_detail_section(conn, conn_id, selected_fund_ids, selected_fund_names)
 
-    st.header("💰 Cashflow Planning")
 
-    # ================================================================
-    # Dashboard-Widgets (Portfolio-KPIs)
-    # ================================================================
-    render_dashboard_widgets(conn_id)
+def render_fund_detail_section(conn, conn_id, selected_fund_ids, selected_fund_names):
+    """Rendert den Einzelfonds-Detail-Tab mit Cashflows, Charts, Forecast, Szenario, Import."""
 
-    # ================================================================
-    # Alerts-Banner
-    # ================================================================
-    render_alerts_banner(conn_id)
-
-    st.markdown("---")
+    st.subheader("Einzelfonds")
 
     # ================================================================
     # A) Fonds-Auswahl + Commitment-Info
     # ================================================================
-    all_funds_df = get_all_funds_for_cashflow_cached(conn_id)
+    all_funds_df = get_all_funds_for_cashflow_cached(conn_id, include_pipeline=True)
     if all_funds_df.empty:
         st.warning("Keine Fonds vorhanden. Bitte zuerst Fonds im Admin-Tab anlegen.")
         return
@@ -90,11 +79,23 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
         st.info("Keine Fonds für die aktuelle Filterauswahl verfügbar.")
         return
 
-    fund_names_list = fund_options['fund_name'].tolist()
-    selected_fund_name = st.selectbox(
-        "Fonds auswählen", options=fund_names_list, key="cf_fund_select"
+    # Status-Badge in Dropdown
+    from cashflow_pipeline_db import STATUS_LABELS
+    fund_options = fund_options.copy()
+    if 'status' in fund_options.columns:
+        fund_options['display_name'] = fund_options.apply(
+            lambda r: f"{r['fund_name']} [{STATUS_LABELS.get(r.get('status', 'active'), r.get('status', 'active'))}]",
+            axis=1
+        )
+    else:
+        fund_options['display_name'] = fund_options['fund_name']
+
+    display_names = fund_options['display_name'].tolist()
+    selected_display = st.selectbox(
+        "Fonds auswählen", options=display_names, key="cf_fund_select"
     )
-    selected_fund_row = fund_options[fund_options['fund_name'] == selected_fund_name]
+    selected_fund_row = fund_options[fund_options['display_name'] == selected_display]
+    selected_fund_name = selected_fund_row.iloc[0]['fund_name'] if not selected_fund_row.empty else None
     if selected_fund_row.empty:
         return
     fund_id = int(selected_fund_row.iloc[0]['fund_id'])
@@ -490,16 +491,4 @@ def render_cashflow_tab(conn, conn_id, selected_fund_ids, selected_fund_names):
             except Exception as e:
                 st.error(f"Fehler beim Lesen der Datei: {e}")
 
-    st.markdown("---")
-
-    # ================================================================
-    # I) Portfolio-Aggregation
-    # ================================================================
-    render_portfolio_section(conn, conn_id)
-
-    st.markdown("---")
-
-    # ================================================================
-    # J) Liquiditätsplanung
-    # ================================================================
-    render_liquidity_section(conn, conn_id)
+    # Portfolio und Liquidität sind jetzt eigene Sub-Tabs (siehe cashflow_subtabs.py)
