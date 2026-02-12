@@ -4,6 +4,10 @@ import psycopg2
 from datetime import datetime, date
 from database import get_connection, format_quarter, clear_cache
 from cashflow_fx_ui import render_fx_management
+from cashflow_pipeline_db import (
+    ALL_STATUSES, STATUS_LABELS, VALID_TRANSITIONS,
+    change_fund_status, force_change_fund_status, upsert_pipeline_meta
+)
 
 
 def render_admin_tab(conn):
@@ -99,7 +103,7 @@ def render_admin_tab(conn):
     st.markdown("---")
 
     # Admin Tabs
-    admin_tab1, admin_tab2, admin_tab3, admin_tab4, admin_tab5, admin_tab6, admin_tab7, admin_tab8 = st.tabs(["➕ Import Excel", "🏢 Edit Portfolio Company", "✏️ Edit Fund", "👔 Edit GP", "🤝 Edit Placement Agent", "🗑️ Delete Fund", "🗑️ Delete GP", "🗑️ Delete Placement Agent"])
+    admin_tab1, admin_tab2, admin_tab3, admin_tab4, admin_tab5, admin_tab6, admin_tab7, admin_tab8, admin_tab9 = st.tabs(["➕ Import Excel", "🏢 Edit Portfolio Company", "✏️ Edit Fund", "👔 Edit GP", "🤝 Edit Placement Agent", "📊 Fund Status", "🗑️ Delete Fund", "🗑️ Delete GP", "🗑️ Delete Placement Agent"])
 
     # IMPORT EXCEL
     with admin_tab1:
@@ -135,7 +139,7 @@ def render_admin_tab(conn):
 
             **Zeile 4 (Fund/Portfolio Header):**
             ```
-            Fund Name | Stichtag | Vintage Year | Fund Size | Currency | Geography | Net TVPI | Net IRR | Portfolio Company | Investment Date | Exit Date | Ownership % | Investiert | Realisiert | Unrealisiert | Entry Multiple | Gross IRR
+            Fund Name | Stichtag | Vintage Year | Fund Size | Currency | Geography | Net TVPI | Net IRR | Status | Probability | Expected Commitment | DD Score | DD Notes | Source | Contact Person | Next Step | Next Step Date | Portfolio Company | Investment Date | Exit Date | Ownership % | Investiert | Realisiert | Unrealisiert | Entry Multiple | Gross IRR
             ```
 
             **Zeile 5+:** Fund- und Portfolio-Daten (mehrere Fonds möglich)
@@ -146,6 +150,8 @@ def render_admin_tab(conn):
             - Datumsformat: YYYY-MM-DD oder YYYY-MM
             - Fund-Metadaten (Vintage, Size, etc.) nur bei erster Zeile pro Fund nötig
             - Placement Agent ist optional - wenn PA Name leer, wird kein PA zugeordnet
+            - Status-Spalte optional: screening, due_diligence, negotiation, committed, active, harvesting, closed, declined (Default: active)
+            - Pipeline-Spalten (Probability, DD Score, etc.) optional — werden in Pipeline-Meta gespeichert
             """)
 
         uploaded_file = st.file_uploader("Excel-Datei hochladen", type=['xlsx'], key="excel_upload")
@@ -313,6 +319,24 @@ def render_admin_tab(conn):
                         fund_col_map['entry_multiple'] = i
                     elif 'gross irr' in header_lower or 'irr' in header_lower:
                         fund_col_map['gross_irr'] = i
+                    elif header_lower in ('status', 'fund status'):
+                        fund_col_map['status'] = i
+                    elif 'probability' in header_lower or 'wahrscheinlichkeit' in header_lower:
+                        fund_col_map['probability'] = i
+                    elif 'expected commitment' in header_lower:
+                        fund_col_map['expected_commitment'] = i
+                    elif 'dd score' in header_lower:
+                        fund_col_map['dd_score'] = i
+                    elif 'dd notes' in header_lower or 'dd notizen' in header_lower:
+                        fund_col_map['dd_notes'] = i
+                    elif header_lower in ('source', 'quelle'):
+                        fund_col_map['source'] = i
+                    elif 'contact person' in header_lower or 'kontaktperson' in header_lower:
+                        fund_col_map['contact_person'] = i
+                    elif 'next step date' in header_lower:
+                        fund_col_map['next_step_date'] = i
+                    elif 'next step' in header_lower or 'naechster schritt' in header_lower:
+                        fund_col_map['next_step'] = i
 
                 # Hilfsfunktion für Datumsparsen
                 def parse_date(val):
@@ -390,6 +414,36 @@ def render_admin_tab(conn):
                                     funds_data[fund_name]['metadata'][field] = parse_date(val)
                                 else:
                                     funds_data[fund_name]['metadata'][field] = str(val).strip()
+
+                    # Status auslesen (Default: 'active')
+                    if 'status' not in funds_data[fund_name]['metadata']:
+                        status_val = 'active'
+                        if 'status' in fund_col_map:
+                            raw_status = row.iloc[fund_col_map['status']]
+                            if pd.notna(raw_status) and str(raw_status).strip():
+                                status_val = str(raw_status).strip().lower().replace(' ', '_')
+                                if status_val not in ALL_STATUSES:
+                                    status_val = 'active'
+                        funds_data[fund_name]['metadata']['status'] = status_val
+
+                    # Pipeline-Meta sammeln
+                    if 'pipeline_meta' not in funds_data[fund_name]['metadata']:
+                        pipeline_meta = {}
+                        for field in ['probability', 'expected_commitment', 'dd_score', 'dd_notes',
+                                      'source', 'contact_person', 'next_step', 'next_step_date']:
+                            if field in fund_col_map:
+                                val = row.iloc[fund_col_map[field]]
+                                if pd.notna(val) and str(val).strip():
+                                    if field in ('probability', 'expected_commitment', 'dd_score'):
+                                        try:
+                                            pipeline_meta[field] = float(val)
+                                        except (ValueError, TypeError):
+                                            pass
+                                    elif field == 'next_step_date':
+                                        pipeline_meta[field] = parse_date(val)
+                                    else:
+                                        pipeline_meta[field] = str(val).strip()
+                        funds_data[fund_name]['metadata']['pipeline_meta'] = pipeline_meta
 
                     company_name = None
                     if 'company_name' in fund_col_map:
@@ -927,17 +981,46 @@ def render_admin_tab(conn):
                                     UPDATE funds SET {', '.join(update_fields)}, updated_at = CURRENT_TIMESTAMP
                                     WHERE fund_id = %s
                                     """, update_values)
+                                    # Status aktualisieren (wenn im Excel explizit gesetzt)
+                                    fund_status = fund_info['metadata'].get('status')
+                                    if fund_status and fund_status != 'active':
+                                        cursor.execute("SELECT status FROM funds WHERE fund_id = %s", (fund_id,))
+                                        old_status = cursor.fetchone()[0] or 'active'
+                                        if old_status != fund_status:
+                                            cursor.execute("UPDATE funds SET status = %s WHERE fund_id = %s", (fund_status, fund_id))
+                                            cursor.execute("""
+                                            INSERT INTO fund_status_history (fund_id, old_status, new_status, changed_by, change_reason)
+                                            VALUES (%s, %s, %s, 'excel_import', 'Status geaendert via Excel-Import')
+                                            """, (fund_id, old_status, fund_status))
+
+                                    # Pipeline-Meta aktualisieren
+                                    pipeline_meta = fund_info['metadata'].get('pipeline_meta', {})
+                                    if pipeline_meta:
+                                        upsert_pipeline_meta(conn, fund_id, **pipeline_meta)
+
                                 else:
+                                    fund_status = fund_info['metadata'].get('status', 'active')
                                     cursor.execute("""
-                                    INSERT INTO funds (fund_name, gp_id, placement_agent_id, strategy, vintage_year, fund_size_m, currency, geography)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                    INSERT INTO funds (fund_name, gp_id, placement_agent_id, strategy, vintage_year, fund_size_m, currency, geography, status)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     RETURNING fund_id
                                     """, (fund_name, gp_id, pa_id, gp_data.get('strategy'),
                                          fund_info['metadata'].get('vintage_year'),
                                          fund_info['metadata'].get('fund_size_m'), fund_info['metadata'].get('currency'),
-                                         fund_info['metadata'].get('geography')))
+                                         fund_info['metadata'].get('geography'), fund_status))
                                     fund_id = cursor.fetchone()[0]
                                     imported_funds += 1
+
+                                    # Status-History loggen
+                                    cursor.execute("""
+                                    INSERT INTO fund_status_history (fund_id, old_status, new_status, changed_by, change_reason)
+                                    VALUES (%s, NULL, %s, 'excel_import', 'Importiert via Excel')
+                                    """, (fund_id, fund_status))
+
+                                    # Pipeline-Meta speichern
+                                    pipeline_meta = fund_info['metadata'].get('pipeline_meta', {})
+                                    if pipeline_meta:
+                                        upsert_pipeline_meta(conn, fund_id, **pipeline_meta)
 
                                 for company in fund_info['companies']:
                                     company_name = company['company_name']
@@ -1675,8 +1758,134 @@ def render_admin_tab(conn):
                 else:
                     st.error("Bitte PA Namen eingeben!")
 
-    # DELETE FUND
+    # FUND STATUS MANAGEMENT
     with admin_tab6:
+        st.subheader("Fund Status verwalten")
+
+        status_mode = st.radio("Modus", ["Einzelner Fund", "Bulk Status-Aenderung", "Direkt setzen (Ersteinrichtung)"], key="status_mode", horizontal=True)
+
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT f.fund_id, f.fund_name, COALESCE(f.status, 'active') as status, g.gp_name
+                FROM funds f LEFT JOIN gps g ON f.gp_id = g.gp_id
+                ORDER BY f.fund_name
+            """)
+            all_funds_status = cursor.fetchall()
+
+        if not all_funds_status:
+            st.info("Keine Fonds vorhanden.")
+        elif status_mode == "Einzelner Fund":
+            fund_options = {f"{name} [{STATUS_LABELS.get(status, status)}]": (fid, status)
+                           for fid, name, status, gp in all_funds_status}
+            selected_fund_label = st.selectbox("Fonds", options=list(fund_options.keys()), key="status_single_fund")
+            fund_id, current_status = fund_options[selected_fund_label]
+
+            st.info(f"Aktueller Status: **{STATUS_LABELS.get(current_status, current_status)}**")
+
+            valid_next = VALID_TRANSITIONS.get(current_status, [])
+            force = st.checkbox("Erzwingen (ungueltige Transition)", key="force_single")
+
+            if force:
+                st.warning("Alle Status-Optionen verfuegbar. Transition-Regeln werden ignoriert.")
+                status_options = [s for s in ALL_STATUSES if s != current_status]
+            else:
+                status_options = list(valid_next)
+
+            if not status_options:
+                st.info("Keine erlaubten Uebergaenge fuer diesen Status." + (" Aktivieren Sie 'Erzwingen' fuer Admin-Override." if not force else ""))
+            else:
+                new_status = st.selectbox("Neuer Status", options=status_options,
+                                          format_func=lambda s: STATUS_LABELS.get(s, s), key="status_single_new")
+                reason = st.text_input("Grund", key="reason_single")
+
+                if st.button("Status aendern", key="btn_status_single"):
+                    try:
+                        if force:
+                            force_change_fund_status(conn, fund_id, new_status, 'admin', reason)
+                        else:
+                            change_fund_status(conn, fund_id, new_status, 'admin', reason)
+                        clear_cache()
+                        st.success(f"Status geaendert: {STATUS_LABELS.get(current_status, current_status)} → {STATUS_LABELS.get(new_status, new_status)}")
+                        st.rerun()
+                    except ValueError as e:
+                        st.error(f"Fehler: {e}")
+
+        elif status_mode == "Bulk Status-Aenderung":
+            filter_status = st.selectbox("Aktueller Status filtern", list(ALL_STATUSES),
+                                         format_func=lambda s: STATUS_LABELS.get(s, s), key="status_bulk_filter")
+
+            matching_funds = [(fid, name) for fid, name, status, gp in all_funds_status if status == filter_status]
+
+            if not matching_funds:
+                st.info(f"Keine Fonds mit Status '{STATUS_LABELS.get(filter_status, filter_status)}'.")
+            else:
+                selected_funds = st.multiselect("Fonds auswaehlen",
+                    options=matching_funds,
+                    format_func=lambda x: x[1], key="status_bulk_select")
+
+                force = st.checkbox("Erzwingen", key="force_bulk")
+                valid_next = VALID_TRANSITIONS.get(filter_status, [])
+                target_options = [s for s in ALL_STATUSES if s != filter_status] if force else list(valid_next)
+
+                if not target_options:
+                    st.info("Keine erlaubten Uebergaenge." + (" Aktivieren Sie 'Erzwingen'." if not force else ""))
+                else:
+                    target_status = st.selectbox("Ziel-Status", target_options,
+                                                 format_func=lambda s: STATUS_LABELS.get(s, s), key="status_bulk_target")
+                    reason = st.text_input("Grund", key="reason_bulk")
+
+                    if selected_funds and st.button(f"{len(selected_funds)} Fonds aendern", key="btn_status_bulk"):
+                        errors = []
+                        for fund_id, fund_name in selected_funds:
+                            try:
+                                if force:
+                                    force_change_fund_status(conn, fund_id, target_status, 'admin', reason)
+                                else:
+                                    change_fund_status(conn, fund_id, target_status, 'admin', reason)
+                            except ValueError as e:
+                                errors.append(f"{fund_name}: {e}")
+                        clear_cache()
+                        if errors:
+                            st.warning(f"{len(selected_funds) - len(errors)} geaendert, {len(errors)} Fehler:")
+                            for err in errors:
+                                st.error(err)
+                        else:
+                            st.success(f"{len(selected_funds)} Fonds auf {STATUS_LABELS.get(target_status, target_status)} gesetzt.")
+                        st.rerun()
+
+        elif status_mode == "Direkt setzen (Ersteinrichtung)":
+            st.info("Fuer einmalige Ersteinrichtung: Status direkt setzen ohne Transition-Regeln.")
+
+            changes = {}
+            for fund_id, fund_name, current_status, gp_name in all_funds_status:
+                col1, col2, col3 = st.columns([3, 2, 2])
+                with col1:
+                    st.text(f"{fund_name} ({gp_name or '-'})")
+                with col2:
+                    st.text(f"Aktuell: {STATUS_LABELS.get(current_status, current_status)}")
+                with col3:
+                    current_idx = list(ALL_STATUSES).index(current_status) if current_status in ALL_STATUSES else 0
+                    new = st.selectbox("Neuer Status", list(ALL_STATUSES),
+                        index=current_idx,
+                        format_func=lambda s: STATUS_LABELS.get(s, s),
+                        key=f"direct_{fund_id}")
+                    if new != current_status:
+                        changes[fund_id] = (current_status, new)
+
+            reason = st.text_input("Grund fuer alle Aenderungen", key="reason_direct",
+                                   value="Ersteinrichtung Status")
+
+            if changes and st.button(f"{len(changes)} Aenderungen speichern", key="btn_status_direct"):
+                for fid, (old, new) in changes.items():
+                    force_change_fund_status(conn, fid, new, 'admin', reason)
+                clear_cache()
+                st.success(f"{len(changes)} Status-Aenderungen gespeichert.")
+                st.rerun()
+            elif not changes:
+                st.info("Keine Aenderungen vorgenommen.")
+
+    # DELETE FUND
+    with admin_tab7:
         st.subheader("Fund löschen")
         st.warning("⚠️ Diese Aktion kann nicht rückgängig gemacht werden!")
 
@@ -1706,7 +1915,7 @@ def render_admin_tab(conn):
                     st.rerun()
 
     # DELETE GP
-    with admin_tab7:
+    with admin_tab8:
         st.subheader("GP löschen")
         st.warning("⚠️ Diese Aktion kann nicht rückgängig gemacht werden!")
 
@@ -1739,7 +1948,7 @@ def render_admin_tab(conn):
                         st.rerun()
 
     # DELETE PLACEMENT AGENT
-    with admin_tab8:
+    with admin_tab9:
         st.subheader("Placement Agent löschen")
         st.warning("⚠️ Diese Aktion kann nicht rückgängig gemacht werden!")
 

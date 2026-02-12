@@ -204,6 +204,25 @@ def change_fund_status(conn, fund_id, new_status, changed_by='system', reason=''
         conn.commit()
 
 
+def force_change_fund_status(conn, fund_id, new_status, changed_by='admin', reason=''):
+    """Admin-Override: Setzt Status ohne Transition-Validierung.
+    Loggt trotzdem in fund_status_history."""
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT status FROM funds WHERE fund_id = %s", (fund_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError(f"Fund {fund_id} nicht gefunden")
+        old_status = row[0] or 'active'
+        if old_status == new_status:
+            return
+        cursor.execute("UPDATE funds SET status = %s WHERE fund_id = %s", (new_status, fund_id))
+        cursor.execute("""
+        INSERT INTO fund_status_history (fund_id, old_status, new_status, changed_by, change_reason)
+        VALUES (%s, %s, %s, %s, %s)
+        """, (fund_id, old_status, new_status, changed_by, reason))
+        conn.commit()
+
+
 def get_fund_status_history(conn, fund_id):
     """Holt Status-Änderungshistorie für einen Fonds."""
     with conn.cursor() as cursor:
